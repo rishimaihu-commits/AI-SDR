@@ -1,10 +1,68 @@
-import DashboardLayout from '@/components/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft, Users, Mail, TrendingUp, Calendar } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  ArrowLeft,
+  Users,
+  Mail,
+  TrendingUp,
+  Calendar,
+  Building2,
+} from "lucide-react";
+import { Link } from "react-router-dom";
+
+type CampaignPerson = {
+  name: string;
+  title: string;
+  email: string;
+  organization_name: string;
+  linkedin_url: string;
+  _id: string;
+};
+
+type AnalyticsData = {
+  totalProspects: number;
+  uniqueCompanies: number;
+  emailsSentToday: number;
+  responseRate: number;
+  meetingsScheduled: number;
+};
 
 export default function AiSdrDashboard() {
+  const [topCompanies, setTopCompanies] = useState<CampaignPerson[]>([]);
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+
+  useEffect(() => {
+    const fetchTopCompanies = async () => {
+      try {
+        const res = await fetch(
+          "http://localhost:5000/api/campaigns/unique-companies?limit=3"
+        );
+        const data = await res.json();
+        setTopCompanies(data || []);
+      } catch (err) {
+        console.error("Failed to fetch top companies:", err);
+        setTopCompanies([]);
+      }
+    };
+
+    const fetchAnalytics = async () => {
+      try {
+        const res = await fetch(
+          "http://localhost:5000/api/campaigns/analytics"
+        );
+        const data = await res.json();
+        setAnalytics(data);
+      } catch (err) {
+        console.error("Failed to fetch analytics:", err);
+      }
+    };
+
+    fetchTopCompanies();
+    fetchAnalytics();
+  }, []);
+
   return (
     <DashboardLayout>
       <div className="max-w-6xl">
@@ -18,131 +76,113 @@ export default function AiSdrDashboard() {
           </Link>
           <div>
             <h1 className="text-3xl font-medium">AI SDR Dashboard</h1>
-            <p className="text-muted-foreground">Manage your AI-powered sales development</p>
+            <p className="text-muted-foreground">
+              Companies you're reaching out to
+            </p>
           </div>
         </div>
 
-        {/* Quick Stats */}
+        {/* Analytics Summary */}
         <div className="grid md:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center">
                 <Users className="w-8 h-8 text-primary mr-3" />
                 <div>
-                  <p className="text-2xl font-bold">2,847</p>
-                  <p className="text-xs text-muted-foreground">Active Prospects</p>
+                  <p className="text-2xl font-bold">
+                    {analytics?.totalProspects ?? "-"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Total Prospects
+                  </p>
                 </div>
               </div>
             </CardContent>
           </Card>
-
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center">
                 <Mail className="w-8 h-8 text-primary mr-3" />
                 <div>
-                  <p className="text-2xl font-bold">1,423</p>
-                  <p className="text-xs text-muted-foreground">Emails Sent Today</p>
+                  <p className="text-2xl font-bold">
+                    {analytics?.emailsSentToday ?? "-"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Emails Sent Today
+                  </p>
                 </div>
               </div>
             </CardContent>
           </Card>
-
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center">
                 <TrendingUp className="w-8 h-8 text-primary mr-3" />
                 <div>
-                  <p className="text-2xl font-bold">23.5%</p>
+                  <p className="text-2xl font-bold">
+                    {analytics
+                      ? `${(analytics.responseRate * 100).toFixed(1)}%`
+                      : "-"}
+                  </p>
                   <p className="text-xs text-muted-foreground">Response Rate</p>
                 </div>
               </div>
             </CardContent>
           </Card>
-
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center">
                 <Calendar className="w-8 h-8 text-primary mr-3" />
                 <div>
-                  <p className="text-2xl font-bold">47</p>
-                  <p className="text-xs text-muted-foreground">Meetings Scheduled</p>
+                  <p className="text-2xl font-bold">
+                    {analytics?.meetingsScheduled ?? "-"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Meetings Scheduled
+                  </p>
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Main Content Grid */}
-        <div className="grid lg:grid-cols-2 gap-6">
-          {/* Recent Activity */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded">
-                <div>
-                  <p className="font-medium">Email sent to John Smith</p>
-                  <p className="text-sm text-muted-foreground">TechCorp Inc.</p>
+        {/* Companies List */}
+        <Card>
+          <CardHeader className="flex flex-row justify-between items-center">
+            <CardTitle>Top Prospect Companies</CardTitle>
+            <Link to="/companies">
+              <Button variant="outline" size="sm">
+                View All Companies
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {topCompanies.length === 0 ? (
+              <p className="text-muted-foreground">No companies found.</p>
+            ) : (
+              topCompanies.map((person, idx) => (
+                <div
+                  key={idx}
+                  className="flex justify-between items-center p-4 bg-secondary/50 rounded-md border"
+                >
+                  <div className="flex items-center gap-3">
+                    <Building2 className="text-primary" />
+                    <span className="font-medium">
+                      {person.organization_name}
+                    </span>
+                  </div>
+                  <Link
+                    to={`/prospects?company=${encodeURIComponent(
+                      person.organization_name
+                    )}`}
+                  >
+                    <Button variant="outline">View Prospects</Button>
+                  </Link>
                 </div>
-                <span className="text-xs text-muted-foreground">2 min ago</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded">
-                <div>
-                  <p className="font-medium">Follow-up scheduled</p>
-                  <p className="text-sm text-muted-foreground">Sarah Johnson - DataFlow LLC</p>
-                </div>
-                <span className="text-xs text-muted-foreground">15 min ago</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-secondary/50 rounded">
-                <div>
-                  <p className="font-medium">New lead qualified</p>
-                  <p className="text-sm text-muted-foreground">Mike Chen - StartupX</p>
-                </div>
-                <span className="text-xs text-muted-foreground">1 hour ago</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Campaign Performance */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Top Campaigns</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="font-medium">Q4 Enterprise Outreach</span>
-                  <span className="text-sm text-muted-foreground">32% open rate</span>
-                </div>
-                <div className="w-full bg-secondary rounded-full h-2">
-                  <div className="bg-primary h-2 rounded-full" style={{width: '32%'}}></div>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="font-medium">SaaS Startup Series</span>
-                  <span className="text-sm text-muted-foreground">28% open rate</span>
-                </div>
-                <div className="w-full bg-secondary rounded-full h-2">
-                  <div className="bg-primary h-2 rounded-full" style={{width: '28%'}}></div>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="font-medium">Holiday Special</span>
-                  <span className="text-sm text-muted-foreground">25% open rate</span>
-                </div>
-                <div className="w-full bg-secondary rounded-full h-2">
-                  <div className="bg-primary h-2 rounded-full" style={{width: '25%'}}></div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
 
         {/* Action Buttons */}
         <div className="mt-8 flex gap-4">
@@ -151,12 +191,10 @@ export default function AiSdrDashboard() {
               Start New Campaign
             </Button>
           </Link>
-          <Button variant="outline">
-            View All Prospects
-          </Button>
-          <Button variant="outline">
-            Analytics Report
-          </Button>
+          <Link to="/prospects">
+            <Button variant="outline">View All Prospects</Button>
+          </Link>
+          <Button variant="outline">Analytics Report</Button>
         </div>
       </div>
     </DashboardLayout>

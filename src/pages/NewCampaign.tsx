@@ -1,157 +1,146 @@
-import { useState } from 'react';
-import DashboardLayout from '@/components/DashboardLayout';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { ArrowLeft, Search, Plus, Check } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { useState } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Link, useNavigate } from "react-router-dom";
+import axios from "axios";
 
 export default function NewCampaign() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [industry, setIndustry] = useState('');
-  const [companySize, setCompanySize] = useState('');
-  const [searchLimit, setSearchLimit] = useState('');
+  const [prompt, setPrompt] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [companySize, setCompanySize] = useState("");
+  const [searchLimit, setSearchLimit] = useState("");
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
-  const steps = [
-    { number: 1, name: 'Extract', active: true },
-    { number: 2, name: 'Campaign Setup', active: false },
-    { number: 3, name: 'Settings', active: false }
-  ];
+  const handleContinue = async () => {
+    try {
+      setLoading(true);
+
+      const response = await axios.post(
+        "http://localhost:5678/webhook-test/prompt-intent",
+        {
+          prompt,
+          filters: {
+            industry,
+            companySize,
+            searchLimit,
+          },
+        }
+      );
+
+      const responseData = Array.isArray(response.data)
+        ? response.data[0]
+        : response.data;
+
+      const rawPeople = responseData?.campaignPeople || [];
+      const rawCompanies = responseData?.campaignContacts || [];
+
+      const allPeople = rawPeople.map((person: any) => ({
+        name: person?.name || "Not Available",
+        email: person?.email || "Not Available",
+        designation: person?.title || "Not Available",
+        linkedin_url: person?.linkedin_url || "Not Available",
+        company: person?.organization_name || "Unknown Company",
+        domain: "",
+      }));
+
+      const companies = rawCompanies.map((c: any) => ({
+        company: c?.company || "Unknown",
+        domain: c?.domain || "Not Available",
+      }));
+
+      // ✅ Save clean data to localStorage
+      localStorage.setItem("campaignPeople", JSON.stringify(allPeople));
+      localStorage.setItem("campaignContacts", JSON.stringify(companies));
+
+      // ✅ Save campaign
+      const campaignId = Date.now().toString();
+      const campaign = {
+        id: campaignId,
+        name: prompt.slice(0, 50) || "Untitled Campaign",
+        prompt,
+        filters: { industry, companySize, searchLimit },
+        createdAt: new Date().toISOString(),
+        campaignPeople: allPeople,
+        campaignContacts: companies,
+      };
+
+      const existing = JSON.parse(localStorage.getItem("campaigns") || "[]");
+      existing.push(campaign);
+      localStorage.setItem("campaigns", JSON.stringify(existing));
+      localStorage.setItem("currentCampaignId", campaignId);
+
+      navigate("/campaign-leads");
+    } catch (error) {
+      console.error("❌ Failed to trigger workflow:", error);
+      alert("Something went wrong while extracting data.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <DashboardLayout>
-      <div className="max-w-6xl">
-        {/* Header with Back Button */}
-        <div className="flex items-center mb-8">
-          <Link to="/ai-sdr-dashboard">
-            <Button variant="ghost" size="sm" className="mr-4">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
-          </Link>
-          <h1 className="text-3xl font-medium">New Campaign</h1>
+      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+        <div>
+          <label className="block mb-1 text-sm font-medium text-muted-foreground">
+            Prompt
+          </label>
+          <Input
+            placeholder="e.g. Find HR Managers at companies in FinTech"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
         </div>
 
-        {/* Steps Progress */}
-        <div className="flex items-center mb-12">
-          {steps.map((step, index) => (
-            <div key={step.number} className="flex items-center">
-              <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 ${
-                step.active 
-                  ? 'border-primary bg-primary text-primary-foreground' 
-                  : 'border-muted-foreground text-muted-foreground'
-              }`}>
-                {step.number}
-              </div>
-              <span className={`ml-2 ${step.active ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
-                {step.name}
-              </span>
-              {index < steps.length - 1 && (
-                <div className="mx-8 h-px bg-border flex-1 max-w-24"></div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Main Content */}
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Left Side - Form */}
-          <div className="lg:col-span-2 space-y-8">
-            <div>
-              <h2 className="text-2xl font-medium mb-8 text-center">Find people you are looking for</h2>
-              
-              {/* Search Input */}
-              <div className="relative mb-6">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                <Input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="type here....."
-                  className="pl-12 h-12 text-lg"
-                />
-                <Button 
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 w-8 h-8 p-0 rounded-full bg-primary"
-                  size="sm"
-                >
-                  <ArrowLeft className="w-4 h-4 rotate-180" />
-                </Button>
-              </div>
-
-              {/* Filters Row */}
-              <div className="grid md:grid-cols-2 gap-4 mb-6">
-                <div>
-                  <Input
-                    value={industry}
-                    onChange={(e) => setIndustry(e.target.value)}
-                    placeholder="Industry"
-                    className="h-12"
-                  />
-                </div>
-                <div>
-                  <Input
-                    value={companySize}
-                    onChange={(e) => setCompanySize(e.target.value)}
-                    placeholder="Company Size"
-                    className="h-12"
-                  />
-                </div>
-              </div>
-
-              {/* Search Limit and Add Filter */}
-              <div className="flex items-center gap-4">
-                <div className="relative flex-1">
-                  <Input
-                    value={searchLimit}
-                    onChange={(e) => setSearchLimit(e.target.value)}
-                    placeholder="Search limit"
-                    className="h-12 pr-12"
-                  />
-                  <Check className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-green-500" />
-                </div>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="h-12 w-12 p-0 border-dashed"
-                >
-                  <Plus className="w-5 h-5" />
-                </Button>
-              </div>
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="block mb-1 text-sm font-medium text-muted-foreground">
+              Industry
+            </label>
+            <Input
+              placeholder="e.g. FinTech"
+              value={industry}
+              onChange={(e) => setIndustry(e.target.value)}
+            />
           </div>
-
-          {/* Right Side - Instructions */}
-          <div className="space-y-6">
-            <div className="bg-card border rounded-lg p-6">
-              <h3 className="font-medium mb-3">Data Extraction</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Type in data to extract email, whatsapp, linkedin, mobile no. data
-              </p>
-            </div>
-
-            <div className="bg-card border rounded-lg p-6">
-              <h3 className="font-medium mb-3">Additional Filters</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Add more filters (optional)
-              </p>
-            </div>
+          <div>
+            <label className="block mb-1 text-sm font-medium text-muted-foreground">
+              Company Size
+            </label>
+            <Input
+              placeholder="e.g. 100-500"
+              value={companySize}
+              onChange={(e) => setCompanySize(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block mb-1 text-sm font-medium text-muted-foreground">
+              Search Limit
+            </label>
+            <Input
+              type="number"
+              placeholder="e.g. 10"
+              value={searchLimit}
+              onChange={(e) => setSearchLimit(e.target.value)}
+            />
           </div>
         </div>
 
-        {/* Action Buttons */}
         <div className="mt-12 flex justify-between">
           <Link to="/ai-sdr-dashboard">
-            <Button variant="outline">
-              Cancel
-            </Button>
+            <Button variant="outline">Cancel</Button>
           </Link>
           <div className="flex gap-4">
-            <Button variant="outline">
-              Save Draft
+            <Button variant="outline">Save Draft</Button>
+            <Button
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={handleContinue}
+              disabled={loading}
+            >
+              {loading ? "Extracting..." : "Continue to Campaign Setup"}
             </Button>
-            <Link to="/campaign-leads">
-              <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
-                Continue to Campaign Setup
-              </Button>
-            </Link>
           </div>
         </div>
       </div>

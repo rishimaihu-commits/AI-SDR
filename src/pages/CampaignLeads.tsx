@@ -1,177 +1,328 @@
-import { useState } from 'react';
-import DashboardLayout from '@/components/DashboardLayout';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ArrowLeft, Search, Download, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
-const mockLeads = [
-  { id: 1, name: 'John Smith', designation: 'CEO', companyName: 'TechCorp Inc.', email: 'john@techcorp.com', contact: '+1-555-0123', socials: '@johnsmith', selected: true },
-  { id: 2, name: 'Sarah Johnson', designation: 'VP Sales', companyName: 'DataFlow LLC', email: 'sarah@dataflow.com', contact: '+1-555-0124', socials: '@sarahj', selected: true },
-  { id: 3, name: 'Mike Chen', designation: 'CTO', companyName: 'StartupX', email: 'mike@startupx.io', contact: '+1-555-0125', socials: '@mikechen', selected: false },
-  { id: 4, name: 'Lisa Williams', designation: 'Marketing Dir', companyName: 'GrowthCo', email: 'lisa@growthco.com', contact: '+1-555-0126', socials: '@lisaw', selected: true },
-  { id: 5, name: 'David Brown', designation: 'Founder', companyName: 'InnovateLab', email: 'david@innovate.com', contact: '+1-555-0127', socials: '@davidb', selected: true },
-];
+// Normalize function to improve company matching
+function normalize(str: string = "") {
+  return str
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .trim();
+}
 
 export default function CampaignLeads() {
-  const [leads, setLeads] = useState(mockLeads);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const totalPages = 10;
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [people, setPeople] = useState<any[]>([]);
+  const [selectedCompany, setSelectedCompany] = useState<any>(null);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
+  const [generatedEmails, setGeneratedEmails] = useState<
+    Record<string, string>
+  >({});
+  const [selectAll, setSelectAll] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState<string>(
+    "Write a short cold email introducing our product to this person. Keep it professional and friendly. Their name is [NAME] and they work at [COMPANY]."
+  );
 
-  const handleSelectAll = (checked: boolean) => {
-    setLeads(leads.map(lead => ({ ...lead, selected: checked })));
+  useEffect(() => {
+    try {
+      const peopleData = localStorage.getItem("campaignPeople");
+      const contactsData = localStorage.getItem("campaignContacts");
+
+      if (!peopleData || !contactsData) {
+        console.warn("⚠️ No campaign found in localStorage");
+        return;
+      }
+
+      setPeople(JSON.parse(peopleData));
+      setCompanies(JSON.parse(contactsData));
+    } catch (err) {
+      console.error("❌ Failed to load localStorage data", err);
+    }
+  }, []);
+
+  const fetchEmployees = (company: any) => {
+    setSelectedCompany(company);
+    setLoading(true);
+
+    try {
+      const targetCompany = normalize(company.company);
+      const filtered = people.filter(
+        (p) => normalize(p.company) === targetCompany
+      );
+
+      if (filtered.length === 0) {
+        setEmployees([
+          {
+            company: company.company,
+            name: "Not Available",
+            email: "Not Available",
+            designation: "Not Available",
+            linkedin_url: "Not Available",
+          },
+        ]);
+      } else {
+        const mapped = filtered.map((p) => ({
+          company: p.company || "Not Available",
+          name: p.name || "Not Available",
+          email: p.email || "Not Available",
+          designation: p.designation || "Not Available",
+          linkedin_url: p.linkedin_url || "Not Available",
+        }));
+        setEmployees(mapped);
+      }
+
+      setSelectedEmployees([]);
+      setGeneratedEmails({});
+      setSelectAll(false);
+    } catch (err) {
+      console.error("❌ Error filtering employees", err);
+      setEmployees([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSelectLead = (id: number, checked: boolean) => {
-    setLeads(leads.map(lead => 
-      lead.id === id ? { ...lead, selected: checked } : lead
-    ));
+  const toggleSelect = (email: string) => {
+    setSelectedEmployees((prev) =>
+      prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email]
+    );
   };
 
-  const selectedCount = leads.filter(lead => lead.selected).length;
-  const allSelected = selectedCount === leads.length;
-  const someSelected = selectedCount > 0 && selectedCount < leads.length;
+  const toggleSelectAll = () => {
+    if (selectAll) {
+      setSelectedEmployees([]);
+    } else {
+      const allEmails = employees.map((emp) => emp.email).filter(Boolean);
+      setSelectedEmployees(allEmails);
+    }
+    setSelectAll(!selectAll);
+  };
+
+  const generateEmail = async (emp: any) => {
+    const prompt = customPrompt
+      .replace(/\[NAME\]/g, emp.name)
+      .replace(/\[COMPANY\]/g, emp.company);
+
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer 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`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "http://localhost:8080",
+          "X-Title": "AI SDR Campaign",
+        },
+        body: JSON.stringify({
+          model: "mistralai/mistral-7b-instruct",
+          messages: [
+            { role: "system", content: "You are a B2B email writing expert." },
+            { role: "user", content: prompt },
+          ],
+        }),
+      });
+
+      const data = await res.json();
+      const content =
+        data.choices?.[0]?.message?.content || "⚠️ No content generated.";
+
+      setGeneratedEmails((prev) => ({ ...prev, [emp.email]: content }));
+    } catch (err) {
+      console.error("❌ Failed to generate email for", emp.email, err);
+      setGeneratedEmails((prev) => ({
+        ...prev,
+        [emp.email]: "❌ Error generating email",
+      }));
+    }
+  };
+
+  const sendEmails = async () => {
+    const recipients = employees
+      .filter((emp) => selectedEmployees.includes(emp.email))
+      .map((emp) => ({
+        company: emp.company,
+        email: emp.email,
+        linkedin_url: emp.linkedin_url,
+        message: generatedEmails[emp.email] || "",
+      }));
+
+    if (recipients.length === 0) {
+      alert("No recipients selected");
+      return;
+    }
+
+    try {
+      setSending(true);
+      const response = await fetch(
+        "http://localhost:5678/webhook-test/send-emails",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipients }),
+        }
+      );
+
+      if (!response.ok)
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      const result = await response.json();
+      console.log("📤 Server Response:", result);
+      alert("✅ Emails sent successfully!");
+    } catch (err) {
+      console.error("❌ Failed to send emails", err);
+      alert("❌ Failed to send emails.");
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
-    <DashboardLayout>
-      <div className="max-w-7xl">
-        {/* Header */}
-        <div className="flex items-center mb-8">
-          <Link to="/new-campaign">
-            <Button variant="ghost" size="sm" className="mr-4">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-            </Button>
-          </Link>
-          <h1 className="text-3xl font-medium">New Campaign / Find people table</h1>
-        </div>
+    <div className="p-6">
+      <h2 className="text-2xl font-semibold mb-4">
+        {!selectedCompany
+          ? "Select a Company"
+          : `Employees at ${selectedCompany.company}`}
+      </h2>
 
-        {/* Search and Actions Bar */}
-        <div className="flex items-center gap-4 mb-6">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+      {!selectedCompany ? (
+        companies.length > 0 ? (
+          <ul className="space-y-2">
+            {companies.map((company, idx) => (
+              <li
+                key={idx}
+                className="border p-3 rounded flex justify-between items-center"
+              >
+                <div>
+                  <p className="font-medium">{company.company}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Domain: {company.domain || "Not Available"}
+                  </p>
+                </div>
+                <Button onClick={() => fetchEmployees(company)}>
+                  View Employees
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No companies found in localStorage.</p>
+        )
+      ) : loading ? (
+        <p>Loading...</p>
+      ) : (
+        <>
+          <div className="mb-4">
+            <label className="block mb-1 font-medium">
+              Custom Email Prompt
+            </label>
             <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Want to make changes to the table?"
-              className="pl-10 h-10"
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
+              placeholder="Enter prompt here..."
             />
-          </div>
-          <Button variant="outline" className="h-10">
-            <Plus className="w-4 h-4 mr-2" />
-            ADD COLUMN
-          </Button>
-          <Button variant="outline" className="h-10">
-            <Download className="w-4 h-4 mr-2" />
-            CSV
-          </Button>
-          <Link to="/campaign-setup">
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-6">
-              NEXT
-            </Button>
-          </Link>
-        </div>
-
-        {/* Table */}
-        <div className="bg-card border rounded-lg overflow-hidden">
-          {/* Table Header */}
-          <div className="bg-secondary/30 p-4 border-b">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <span className="text-sm font-medium">Prompt text</span>
-                <Button variant="ghost" size="sm" className="h-6 text-xs">
-                  Sort
-                </Button>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                <span className="text-sm">
-                  {Array.from({length: Math.min(5, totalPages)}, (_, i) => {
-                    const pageNum = i + 1;
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => setCurrentPage(pageNum)}
-                        className={`mx-1 px-2 py-1 text-sm rounded ${
-                          currentPage === pageNum ? 'bg-primary text-primary-foreground' : 'hover:bg-secondary'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
-                  <span className="mx-1">....{totalPages}</span>
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Table Content */}
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b bg-secondary/20">
-                  <th className="text-left p-4 w-12">
-                    <Checkbox
-                      checked={allSelected}
-                      onCheckedChange={handleSelectAll}
-                    />
-                  </th>
-                  <th className="text-left p-4 font-medium">Name</th>
-                  <th className="text-left p-4 font-medium">Designation</th>
-                  <th className="text-left p-4 font-medium">Company Name</th>
-                  <th className="text-left p-4 font-medium">Email</th>
-                  <th className="text-left p-4 font-medium">Contact</th>
-                  <th className="text-left p-4 font-medium">Socials</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leads.map((lead) => (
-                  <tr key={lead.id} className="border-b hover:bg-secondary/30">
-                    <td className="p-4">
-                      <Checkbox
-                        checked={lead.selected}
-                        onCheckedChange={(checked) => handleSelectLead(lead.id, !!checked)}
-                      />
-                    </td>
-                    <td className="p-4 font-medium">{lead.name}</td>
-                    <td className="p-4 text-muted-foreground">{lead.designation}</td>
-                    <td className="p-4">{lead.companyName}</td>
-                    <td className="p-4 text-blue-400">{lead.email}</td>
-                    <td className="p-4">{lead.contact}</td>
-                    <td className="p-4 text-blue-400">{lead.socials}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Selected Info */}
-        {selectedCount > 0 && (
-          <div className="mt-4 p-3 bg-primary/10 rounded-lg">
-            <p className="text-sm">
-              <span className="font-medium">{selectedCount}</span> of {leads.length} leads selected
+            <p className="text-sm text-muted-foreground mt-1">
+              Use [NAME] and [COMPANY] as placeholders.
             </p>
           </div>
-        )}
-      </div>
-    </DashboardLayout>
+
+          <table className="w-full mt-4 border rounded">
+            <thead className="bg-secondary">
+              <tr>
+                <th className="p-2 text-left">
+                  <input
+                    type="checkbox"
+                    checked={selectAll}
+                    onChange={toggleSelectAll}
+                  />
+                </th>
+                <th className="p-2 text-left">Name</th>
+                <th className="p-2 text-left">Email</th>
+                <th className="p-2 text-left">Designation</th>
+                <th className="p-2 text-left">LinkedIn</th>
+                <th className="p-2 text-left">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {employees.map((emp, idx) => (
+                <tr key={idx} className="border-b align-top">
+                  <td className="p-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedEmployees.includes(emp.email)}
+                      onChange={() => toggleSelect(emp.email)}
+                      disabled={emp.email === "Not Available"}
+                    />
+                  </td>
+                  <td className="p-2">{emp.name}</td>
+                  <td className="p-2 text-blue-500">{emp.email}</td>
+                  <td className="p-2">{emp.designation}</td>
+                  <td className="p-2">
+                    {emp.linkedin_url !== "Not Available" ? (
+                      <a
+                        href={emp.linkedin_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-500 underline"
+                      >
+                        LinkedIn
+                      </a>
+                    ) : (
+                      "Not Available"
+                    )}
+                  </td>
+                  <td className="p-2">
+                    {emp.email !== "Not Available" && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => generateEmail(emp)}
+                        >
+                          Generate Email
+                        </Button>
+                        {generatedEmails[emp.email] && (
+                          <div className="mt-2 p-2 bg-muted rounded text-sm whitespace-pre-wrap">
+                            {generatedEmails[emp.email]}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {employees.length === 1 && employees[0].email === "Not Available" && (
+            <p className="mt-4 italic text-muted-foreground">
+              No actual employees found for this company.
+            </p>
+          )}
+
+          <div className="flex gap-4 mt-4">
+            <Button
+              className="bg-primary text-white"
+              disabled={selectedEmployees.length === 0 || sending}
+              onClick={sendEmails}
+            >
+              {sending ? "Sending..." : "Send Email to Selected"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setSelectedCompany(null);
+                setEmployees([]);
+                setSelectedEmployees([]);
+                setGeneratedEmails({});
+                setSelectAll(false);
+              }}
+            >
+              ← Back to companies
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
