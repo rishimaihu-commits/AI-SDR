@@ -122,7 +122,7 @@ export default function AllProspects() {
                     </Link>
                     <Link to={`/email?company=${encodeURIComponent(company)}`}>
                       <Button variant="outline" size="sm">
-                        Send Email
+                        Create Email
                       </Button>
                     </Link>
                   </div>

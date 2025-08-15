@@ -1,13 +1,70 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import * as XLSX from "xlsx"; // npm install xlsx
 
-// Normalize function to improve company matching
 function normalize(str: string = "") {
   return str
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "")
     .trim();
+}
+
+function exportToCSV(filename: string, rows: any[]) {
+  if (!rows || rows.length === 0) {
+    alert("No data to export");
+    return;
+  }
+  const headers = Object.keys(rows[0]);
+  const csvContent = [
+    headers.join(","),
+    ...rows.map((row) =>
+      headers
+        .map((field) => `"${String(row[field] ?? "").replace(/"/g, '""')}"`)
+        .join(",")
+    ),
+  ].join("\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function exportToExcel(filename: string, rows: any[]) {
+  if (!rows || rows.length === 0) {
+    alert("No data to export");
+    return;
+  }
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  const headers = Object.keys(rows[0]);
+  const linkColIndex = headers.indexOf("linkedin_url");
+
+  if (linkColIndex !== -1) {
+    rows.forEach((row, rowIndex) => {
+      const cellAddress = XLSX.utils.encode_cell({
+        r: rowIndex + 1,
+        c: linkColIndex,
+      });
+      if (row.linkedin_url && row.linkedin_url !== "Not Available") {
+        worksheet[cellAddress] = {
+          t: "s",
+          v: "LinkedIn",
+          l: {
+            Target: row.linkedin_url,
+            Tooltip: `View ${row.name} on LinkedIn`,
+          },
+        };
+      }
+    });
+  }
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+  XLSX.writeFile(workbook, filename);
 }
 
 export default function CampaignLeads() {
@@ -25,6 +82,11 @@ export default function CampaignLeads() {
   const [customPrompt, setCustomPrompt] = useState<string>(
     "Write a short cold email introducing our product to this person. Keep it professional and friendly. Their name is [NAME] and they work at [COMPANY]."
   );
+
+  const API_BASE =
+    process.env.NODE_ENV === "production"
+      ? "" // same domain
+      : "http://localhost:5000"; // backend dev
 
   useEffect(() => {
     try {
@@ -46,7 +108,6 @@ export default function CampaignLeads() {
   const fetchEmployees = (company: any) => {
     setSelectedCompany(company);
     setLoading(true);
-
     try {
       const targetCompany = normalize(company.company);
       const filtered = people.filter(
@@ -73,7 +134,6 @@ export default function CampaignLeads() {
         }));
         setEmployees(mapped);
       }
-
       setSelectedEmployees([]);
       setGeneratedEmails({});
       setSelectAll(false);
@@ -107,14 +167,9 @@ export default function CampaignLeads() {
       .replace(/\[COMPANY\]/g, emp.company);
 
     try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      const res = await fetch(`${API_BASE}/api/openrouter`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer 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`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "http://localhost:8080",
-          "X-Title": "AI SDR Campaign",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "mistralai/mistral-7b-instruct",
           messages: [
@@ -124,10 +179,13 @@ export default function CampaignLeads() {
         }),
       });
 
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
       const data = await res.json();
       const content =
         data.choices?.[0]?.message?.content || "⚠️ No content generated.";
-
       setGeneratedEmails((prev) => ({ ...prev, [emp.email]: content }));
     } catch (err) {
       console.error("❌ Failed to generate email for", emp.email, err);
@@ -156,7 +214,7 @@ export default function CampaignLeads() {
     try {
       setSending(true);
       const response = await fetch(
-        "http://localhost:5678/webhook-test/send-emails",
+        "https://admin-zicloud1.app.n8n.cloud/webhook/send-emails",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -176,6 +234,10 @@ export default function CampaignLeads() {
       setSending(false);
     }
   };
+
+  const selectedData = employees.filter((emp) =>
+    selectedEmployees.includes(emp.email)
+  );
 
   return (
     <div className="p-6">
@@ -308,6 +370,33 @@ export default function CampaignLeads() {
             >
               {sending ? "Sending..." : "Send Email to Selected"}
             </Button>
+
+            <Button
+              variant="outline"
+              disabled={selectedData.length === 0}
+              onClick={() =>
+                exportToCSV(
+                  `${selectedCompany?.company || "data"}_selected.csv`,
+                  selectedData
+                )
+              }
+            >
+              Export CSV
+            </Button>
+
+            <Button
+              variant="outline"
+              disabled={selectedData.length === 0}
+              onClick={() =>
+                exportToExcel(
+                  `${selectedCompany?.company || "data"}_selected.xlsx`,
+                  selectedData
+                )
+              }
+            >
+              Export Excel
+            </Button>
+
             <Button
               variant="secondary"
               onClick={() => {

@@ -5,6 +5,10 @@ import cors from "cors";
 
 import campaignRoutes from "./routes/campaignRoutes";
 import importRoutes from "./routes/import";
+import openaiRoutes from "./routes/openai";
+import openRouterRoutes from "./routes/openRouterRoutes";
+import groqRoutes from "./routes/groqRoutes";
+import emailRoutes from "./routes/emailRoutes";
 
 dotenv.config();
 
@@ -21,6 +25,10 @@ mongoose
 
 app.use("/api/campaigns", campaignRoutes);
 app.use("/api/import", importRoutes);
+app.use("/api/openai", openaiRoutes);
+app.use("/api/openrouter", openRouterRoutes);
+app.use("/api/groq-chat", groqRoutes);
+app.use("/api/generate-email", emailRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -16,6 +16,11 @@ type CampaignPerson = {
   linkedin_url: string;
 };
 
+const API_BASE =
+  process.env.NODE_ENV === "production"
+    ? "" // calls same domain in prod
+    : "http://localhost:5000"; // backend in dev
+
 export default function SendEmail() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -36,9 +41,7 @@ export default function SendEmail() {
   useEffect(() => {
     const fetchPeople = async () => {
       try {
-        const res = await fetch(
-          "http://localhost:5000/api/campaigns/prospects"
-        );
+        const res = await fetch(`${API_BASE}/api/campaigns/prospects`);
         const data = await res.json();
         const filtered = data.filter(
           (p: CampaignPerson) => p.organization_name === company
@@ -66,26 +69,18 @@ export default function SendEmail() {
       .replace(/\[COMPANY\]/g, person.organization_name);
 
     try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      // Call backend route instead of OpenRouter directly
+      const res = await fetch(`${API_BASE}/api/generate-email`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer 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`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "http://localhost:8080",
-          "X-Title": "AI SDR Campaign",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          prompt: personPrompt,
           model: "mistralai/mistral-7b-instruct",
-          messages: [
-            { role: "system", content: "You are a B2B email writing expert." },
-            { role: "user", content: personPrompt },
-          ],
         }),
       });
 
       const data = await res.json();
-      const content =
-        data.choices?.[0]?.message?.content || "No content generated.";
+      const content = data.content || "No content generated.";
       setGeneratedEmails((prev) => ({ ...prev, [person.email]: content }));
     } catch (err) {
       console.error("Error generating email:", err);
@@ -127,8 +122,9 @@ export default function SendEmail() {
 
     try {
       setSending(true);
+      // Keep n8n webhook as it is
       const res = await fetch(
-        "http://localhost:5678/webhook-test/send-emails",
+        "https://admin-zicloud1.app.n8n.cloud/webhook/send-emails",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
